@@ -45,8 +45,10 @@ with open('models/label_encoder.pkl', 'rb') as f:
     le = pickle.load(f)
 
 ML_FEATURES = [
+    'MemberID',
     'MemberType_enc',
     'Length_m',
+    'Area_original_mm2',
     'Area_effective_mm2',
     'CorrosionFactor',
     'E_effective_GPa',
@@ -54,7 +56,6 @@ ML_FEATURES = [
     'DeadLoad_kN',
     'LiveLoad_kN',
 ]
-
 N_TOTAL = 29  # total members
 
 # ── GEOMETRY ──
@@ -123,9 +124,11 @@ def simulate_year(age_years, dead_kN, live_kN,
         cf = float(np.clip(1.0 - base_loss + variation, 0.60, 1.0))
         cf_map[mem_id] = cf
 
-        rows.append({
+       rows.append({
+            'MemberID':           mem_id,
             'MemberType_enc':     le.transform([mtype])[0],
             'Length_m':           round(length, 3),
+            'Area_original_mm2':  A_base_mm2,
             'Area_effective_mm2': round(A_base_mm2 * cf, 3),
             'CorrosionFactor':    round(cf, 4),
             'E_effective_GPa':    round(E_eff, 2),
