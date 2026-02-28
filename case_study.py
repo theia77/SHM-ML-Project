@@ -8,23 +8,35 @@ import pickle
 import os
 
 # ══════════════════════════════════════════════════
-# REAL WORLD CASE STUDY
-# Fern Hollow Bridge — Pittsburgh, USA
-# Collapsed: January 28, 2022
-# Type: Fink Truss (modeled as Pratt for analysis)
-# Span: ~18.3m | Age: 50+ years | No recent inspection
-# Cause: Severe corrosion + overload
+# CASE STUDY:
+# 50-Year Deterioration Simulation of a Steel Pratt Truss Bridge
+#
+# Geometry : 24m span | 4m height | 8 panels
+# Type     : Determinate Pratt Truss (29 members, 16 nodes)
+# Material : IS 2062 Grade E250 (Fy = 250 MPa)
+#
+# Objective:
+# Demonstrate ML-assisted SHM early warning capability
+# under progressive corrosion and life-cycle loading.
+#
+# Layers:
+# 1. Physics   → time-dependent corrosion + stiffness degradation
+# 2. ML        → surrogate early-warning prediction
+# 3. Reliability → life-cycle risk index R(t) = 1 - Ncritical/Ntotal
+#
+# Note:
+# Representative structural prototype — not a specific real bridge.
 # ══════════════════════════════════════════════════
 
-print("="*55)
-print("  CASE STUDY: Fern Hollow Bridge Collapse (2022)")
-print("="*55)
-print("  Location  : Pittsburgh, Pennsylvania, USA")
-print("  Collapsed : January 28, 2022")
-print("  Cause     : Long-term corrosion + overload")
-print("  Our Goal  : Show our SHM system would have")
-print("              flagged this bridge BEFORE collapse")
-print("="*55)
+print("="*60)
+print("  CASE STUDY: 50-Year Deterioration Simulation")
+print("  Steel Pratt Truss Bridge — ML-Assisted SHM")
+print("="*60)
+print("  Geometry  : 24m span | 4m height | 8 panels")
+print("  Members   : 29 | Nodes: 16")
+print("  Material  : IS 2062 E250 | Fy = 250 MPa")
+print("  Objective : ML early warning + life-cycle reliability")
+print("="*60)
 
 # ── LOAD MODEL ──
 with open('models/bridge_rf_model.pkl', 'rb') as f:
@@ -43,9 +55,9 @@ ML_FEATURES = [
     'LiveLoad_kN',
 ]
 
+N_TOTAL = 29  # total members
+
 # ── GEOMETRY ──
-# Simplified to our 24m Pratt model
-# Fern Hollow was ~18m but we scale loads accordingly
 nodes = {
     1:(0,0),  2:(3,0),  3:(6,0),  4:(9,0),  5:(12,0),
     6:(15,0), 7:(18,0), 8:(21,0), 9:(24,0),
@@ -76,48 +88,40 @@ member_types = {
 os.makedirs('outputs', exist_ok=True)
 np.random.seed(7)
 
-# ── BRIDGE CONDITION SIMULATOR ──
-def simulate_bridge_condition(
-        age_years,
-        dead_kN, live_kN,
-        A_base_mm2, Fy, E_base_GPa,
-        label):
-    """
-    Simulate bridge deterioration over time.
-    Corrosion and stiffness degrade with age.
-    """
+# ── CORROSION RATES (per member type, per year) ──
+# Bottom chord most exposed to moisture → highest rate
+corrosion_rates = {
+    'Bottom Chord': 0.007,   # 0.7%/year
+    'Top Chord':    0.004,   # 0.4%/year
+    'End Post':     0.006,   # 0.6%/year
+    'Vertical':     0.005,   # 0.5%/year
+    'Diagonal':     0.006,   # 0.6%/year
+}
 
-    # Corrosion model:
-    # After 50 years with no maintenance →
-    # bottom chord worst affected (exposed to moisture)
-    # diagonals moderate, top chord least
-    corrosion_rates = {
-        'Bottom Chord': 0.007,   # 0.7% per year
-        'Top Chord':    0.004,
-        'End Post':     0.006,
-        'Vertical':     0.005,
-        'Diagonal':     0.006,
-    }
-
-    # Stiffness degradation: 0.2% per year
-    E_degradation = max(0.70, 1.0 - (age_years * 0.002))
-    E_eff = E_base_GPa * E_degradation
+# ── DETERIORATION SIMULATOR ──
+def simulate_year(age_years, dead_kN, live_kN,
+                  A_base_mm2=1903, Fy=250, E_base_GPa=200):
+    """
+    Simulate bridge state at a given age.
+    Returns predictions, probabilities, corrosion map.
+    """
+    # Stiffness degradation: 0.2%/year, floor at 70%
+    E_degr  = max(0.70, 1.0 - age_years * 0.002)
+    E_eff   = E_base_GPa * E_degr
 
     rows = []
-    corrosion_map = {}
+    cf_map = {}
 
     for mem_id, ni, nj in member_list:
         xi,yi = nodes[ni]; xj,yj = nodes[nj]
         length = np.sqrt((xj-xi)**2 + (yj-yi)**2)
         mtype  = member_types[mem_id]
 
-        # Base corrosion from age
+        # Corrosion with proportional variation
         base_loss = corrosion_rates[mtype] * age_years
-        # Add random variation per member ±5%
-        variation = np.random.uniform(-0.1, 0.1)
-        cf = max(0.60, 1.0 - base_loss + variation)
-        cf = min(cf, 1.0)
-        corrosion_map[mem_id] = cf
+        variation = base_loss * np.random.uniform(-0.1, 0.1)
+        cf = float(np.clip(1.0 - base_loss + variation, 0.60, 1.0))
+        cf_map[mem_id] = cf
 
         rows.append({
             'MemberType_enc':     le.transform([mtype])[0],
@@ -130,125 +134,129 @@ def simulate_bridge_condition(
             'LiveLoad_kN':        live_kN,
         })
 
-    X_new   = pd.DataFrame(rows)[ML_FEATURES]
-    preds   = model.predict(X_new)
-    probas  = model.predict_proba(X_new)
-
-    classes   = list(model.classes_)
-    crit_idx  = classes.index('Critical')
+    X_new      = pd.DataFrame(rows)[ML_FEATURES]
+    preds      = model.predict(X_new)
+    probas     = model.predict_proba(X_new)
+    crit_idx   = list(model.classes_).index('Critical')
     crit_probs = probas[:, crit_idx]
 
-    n_safe     = (preds == 'Safe').sum()
-    n_atrisk   = (preds == 'At-Risk').sum()
-    n_critical = (preds == 'Critical').sum()
-    avg_cf     = np.mean(list(corrosion_map.values()))
+    return preds, crit_probs, cf_map, E_eff
 
-    print(f"\n  {label}")
-    print(f"  Age: {age_years}y | E: {E_eff:.1f} GPa | "
-          f"Avg Corrosion: {(1-avg_cf)*100:.1f}%")
-    print(f"  Safe: {n_safe} | At-Risk: {n_atrisk} | "
-          f"Critical: {n_critical}")
-
-    return preds, crit_probs, corrosion_map, E_eff, n_critical
-
-# ── RUN 4 TIME STAGES ──
-print("\n── Simulating bridge deterioration over 50 years ──\n")
-
+# ── RUN 5 TIME STAGES ──
 stages = [
-    (0,   80, 0,   'Stage 1 — New Bridge (Year 0)'),
-    (15,  100, 50, 'Stage 2 — 15 Years (Routine Service)'),
-    (30,  100, 75, 'Stage 3 — 30 Years (Aging, No Maintenance)'),
-    (50,  120, 112,'Stage 4 — 50 Years (Pre-Collapse Condition)'),
+    (0,   80,  0,   'Year 0  — New Bridge'),
+    (10,  100, 50,  'Year 10 — Early Service'),
+    (20,  100, 75,  'Year 20 — Aging Begins'),
+    (35,  110, 90,  'Year 35 — Significant Deterioration'),
+    (50,  120, 112, 'Year 50 — Critical Condition'),
 ]
+
+print("\n── Member-Level Predictions Across 50 Years ──\n")
 
 stage_results = []
 for age, dead, live, label in stages:
-    preds, crit_probs, cf_map, E_eff, n_crit = simulate_bridge_condition(
-        age_years=age,
-        dead_kN=dead, live_kN=live,
-        A_base_mm2=1903, Fy=250,
-        E_base_GPa=200,
-        label=label
+    preds, crit_probs, cf_map, E_eff = simulate_year(
+        age, dead, live
     )
-    stage_results.append((age, dead, live, label,
-                          preds, crit_probs, cf_map,
-                          E_eff, n_crit))
+    n_safe = (preds=='Safe').sum()
+    n_risk = (preds=='At-Risk').sum()
+    n_crit = (preds=='Critical').sum()
 
-# ── PLOT ALL 4 STAGES ──
-print("\nGenerating case study heatmaps...")
+    # ── RELIABILITY INDEX ──
+    R = round(1 - n_crit / N_TOTAL, 4)
+
+    # ── SYSTEM WARNING ──
+    warning = ''
+    if n_crit / N_TOTAL > 0.40:
+        warning = '🔴 SYSTEM CRITICAL'
+    elif n_crit / N_TOTAL > 0.20:
+        warning = '🟡 SYSTEM WARNING'
+    else:
+        warning = '🟢 SYSTEM SAFE'
+
+    print(f"  {label}")
+    print(f"  E: {E_eff:.0f} GPa | Dead: {dead} kN | Live: {live} kN")
+    print(f"  Safe: {n_safe} | At-Risk: {n_risk} | Critical: {n_crit}")
+    print(f"  Reliability Index R(t) = {R} | {warning}")
+    print()
+
+    stage_results.append({
+        'age':        age,
+        'label':      label,
+        'dead':       dead,
+        'live':       live,
+        'preds':      preds,
+        'crit_probs': crit_probs,
+        'cf_map':     cf_map,
+        'E_eff':      E_eff,
+        'n_safe':     int(n_safe),
+        'n_risk':     int(n_risk),
+        'n_crit':     int(n_crit),
+        'R':          R,
+    })
+
+# ── PLOT HEATMAPS FOR EACH STAGE ──
+print("Generating member-level heatmaps...")
 cmap = plt.cm.RdYlGn_r
 norm = Normalize(vmin=0, vmax=1)
 
-for age, dead, live, label, preds, crit_probs, cf_map, E_eff, n_crit in stage_results:
-
+for s in stage_results:
     fig, ax = plt.subplots(figsize=(16, 7))
     ax.set_facecolor('#0d0d1a')
     fig.patch.set_facecolor('#0d0d1a')
 
     for idx, (mem_id, ni, nj) in enumerate(member_list):
         x1,y1 = nodes[ni]; x2,y2 = nodes[nj]
-        prob  = crit_probs[idx]
-        color = cmap(norm(prob))
+        color = cmap(norm(s['crit_probs'][idx]))
         lw    = 4.5 if member_types[mem_id] in \
                 ['Bottom Chord','Top Chord','End Post'] else 2.5
-        ax.plot([x1,x2],[y1,y2],
-                color=color, linewidth=lw,
-                solid_capstyle='round')
+        ax.plot([x1,x2],[y1,y2], color=color,
+                linewidth=lw, solid_capstyle='round')
 
-        mx,my = (x1+x2)/2,(y1+y2)/2
-        cf_pct = int((1-cf_map[mem_id])*100)
+        mx,my = (x1+x2)/2, (y1+y2)/2
+        cf_pct = int((1 - s['cf_map'][mem_id]) * 100)
         ax.text(mx, my+0.18,
                 f'M{mem_id}\n{cf_pct}%c',
                 fontsize=5.5, color='white',
                 ha='center', va='bottom', alpha=0.85)
 
-    for node_id,(x,y) in nodes.items():
-        ax.plot(x, y, 'o', color='white',
-                markersize=6, zorder=5)
+    for nid,(x,y) in nodes.items():
+        ax.plot(x, y, 'o', color='white', markersize=6, zorder=5)
 
-    ax.annotate('▲ PIN',    xy=(0,0),  fontsize=9,
-                color='cyan', ha='center', va='top',
-                xytext=(0,-0.65))
-    ax.annotate('▲ ROLLER', xy=(24,0), fontsize=9,
-                color='cyan', ha='center', va='top',
-                xytext=(24,-0.65))
+    ax.annotate('▲ PIN',    xy=(0,0),  fontsize=9, color='cyan',
+                ha='center', va='top', xytext=(0,-0.65))
+    ax.annotate('▲ ROLLER', xy=(24,0), fontsize=9, color='cyan',
+                ha='center', va='top', xytext=(24,-0.65))
 
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax, orientation='vertical',
-                        fraction=0.02, pad=0.02)
-    cbar.set_label('Critical Failure Probability',
+    cbar = plt.colorbar(sm, ax=ax, fraction=0.02, pad=0.02)
+    cbar.set_label('Critical Failure Probability (ML)',
                    color='white', fontsize=10)
     cbar.ax.yaxis.set_tick_params(color='white')
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
 
     patches = [
-        mpatches.Patch(color='#00cc44',
-                       label='Low failure probability'),
-        mpatches.Patch(color='#ffdd00',
-                       label='Moderate failure probability'),
-        mpatches.Patch(color='#ff2222',
-                       label='High failure probability'),
+        mpatches.Patch(color='#00cc44', label='Low failure probability'),
+        mpatches.Patch(color='#ffdd00', label='Moderate failure probability'),
+        mpatches.Patch(color='#ff2222', label='High failure probability'),
     ]
     ax.legend(handles=patches, loc='upper right',
               facecolor='#2d2d44', labelcolor='white',
-              fontsize=8, title='ML Prediction',
-              title_fontsize=8)
-
-    n_safe = (preds=='Safe').sum()
-    n_at   = (preds=='At-Risk').sum()
+              fontsize=8, title='ML Prediction', title_fontsize=8)
 
     ax.set_title(
-        f'Fern Hollow Bridge Case Study — {label}\n'
-        f'Dead: {dead} kN  |  Live: {live} kN  |  '
-        f'E: {E_eff:.0f} GPa  |  '
-        f'Safe: {n_safe}  At-Risk: {n_at}  Critical: {n_crit}\n'
+        f'Steel Pratt Truss — {s["label"]}\n'
+        f'Dead: {s["dead"]} kN  |  Live: {s["live"]} kN  |  '
+        f'E: {s["E_eff"]:.0f} GPa\n'
+        f'Safe: {s["n_safe"]}  At-Risk: {s["n_risk"]}  '
+        f'Critical: {s["n_crit"]}  |  '
+        f'Reliability Index R(t) = {s["R"]}\n'
         f'(c% = corrosion loss per member)',
         color='white', fontsize=11, pad=12
     )
 
-    ax.set_xlim(-2, 27)
-    ax.set_ylim(-1.5, 6.5)
+    ax.set_xlim(-2, 27); ax.set_ylim(-1.5, 6.5)
     ax.set_aspect('equal')
     ax.set_xlabel('Span (m)', color='white')
     ax.set_ylabel('Height (m)', color='white')
@@ -257,71 +265,109 @@ for age, dead, live, label, preds, crit_probs, cf_map, E_eff, n_crit in stage_re
         spine.set_edgecolor('#333355')
 
     plt.tight_layout()
-    fname = f'outputs/casestudy_year{age}.png'
+    fname = f'outputs/casestudy_year{s["age"]}.png'
     plt.savefig(fname, dpi=150, bbox_inches='tight',
                 facecolor=fig.get_facecolor())
     plt.close()
-    print(f"  ✅ Saved → {fname}")
+    print(f"  ✅ {fname}")
 
-# ── DETERIORATION TREND PLOT ──
-print("\nGenerating deterioration trend chart...")
-ages    = [s[0] for s in stage_results]
-n_crits = [s[8] for s in stage_results]
-n_safes = [(preds=='Safe').sum()
-           for _,_,_,_,preds,_,_,_,_ in stage_results]
-n_risks = [(preds=='At-Risk').sum()
-           for _,_,_,_,preds,_,_,_,_ in stage_results]
+# ── RELIABILITY INDEX TREND PLOT ──
+print("\nGenerating Reliability Index curve...")
 
-fig, ax = plt.subplots(figsize=(10, 6))
+ages   = [s['age']  for s in stage_results]
+R_vals = [s['R']    for s in stage_results]
+n_crits= [s['n_crit'] for s in stage_results]
+n_risks= [s['n_risk'] for s in stage_results]
+n_safes= [s['n_safe'] for s in stage_results]
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 fig.patch.set_facecolor('#1a1a2e')
-ax.set_facecolor('#1a1a2e')
 
-ax.plot(ages, n_crits, 'o-', color='#ff4444',
-        linewidth=2.5, markersize=8, label='Critical')
-ax.plot(ages, n_risks, 's-', color='#ffdd00',
-        linewidth=2.5, markersize=8, label='At-Risk')
-ax.plot(ages, n_safes, '^-', color='#44ff88',
-        linewidth=2.5, markersize=8, label='Safe')
+# ── TOP: Reliability Index R(t) ──
+ax1.set_facecolor('#1a1a2e')
+ax1.plot(ages, R_vals, 'o-', color='#00aaff',
+         linewidth=3, markersize=10, label='R(t)')
+ax1.fill_between(ages, R_vals, alpha=0.15, color='#00aaff')
 
-ax.axvline(x=50, color='red', linestyle='--',
-           alpha=0.7, label='Collapse Year')
-ax.fill_betweenx([0,29], 45, 55,
-                 color='red', alpha=0.1)
+# Warning thresholds
+ax1.axhline(y=0.80, color='#ffdd00', linestyle='--',
+            alpha=0.8, label='Warning threshold (R=0.80)')
+ax1.axhline(y=0.60, color='#ff4444', linestyle='--',
+            alpha=0.8, label='Critical threshold (R=0.60)')
 
-ax.set_xlabel('Bridge Age (Years)', color='white', fontsize=12)
-ax.set_ylabel('Number of Members', color='white', fontsize=12)
-ax.set_title(
-    'Fern Hollow Bridge — Member Condition Over Time\n'
-    'SHM System Early Warning Demonstration',
+# Shade warning zone
+ax1.fill_between([0,50], 0.60, 0.80,
+                 color='yellow', alpha=0.05)
+ax1.fill_between([0,50], 0, 0.60,
+                 color='red', alpha=0.05)
+
+ax1.set_ylabel('Reliability Index R(t)', color='white', fontsize=12)
+ax1.set_title(
+    '50-Year Life-Cycle Reliability of Steel Pratt Truss Bridge\n'
+    'ML-Assisted SHM — Member-Level Analysis',
     color='white', fontsize=13
 )
-ax.legend(facecolor='#2d2d44', labelcolor='white', fontsize=10)
-ax.tick_params(colors='white')
-ax.set_xticks(ages)
-ax.set_xticklabels([f'Year {a}' for a in ages], color='white')
-ax.set_ylim(0, 30)
-for spine in ax.spines.values():
+ax1.legend(facecolor='#2d2d44', labelcolor='white', fontsize=10)
+ax1.tick_params(colors='white')
+ax1.set_ylim(0, 1.05)
+ax1.set_xticks(ages)
+ax1.grid(axis='y', color='#333355', linestyle='--', alpha=0.5)
+for spine in ax1.spines.values():
     spine.set_edgecolor('#333355')
-ax.grid(axis='y', color='#333355', linestyle='--', alpha=0.5)
+
+# ── BOTTOM: Member condition count ──
+ax2.set_facecolor('#1a1a2e')
+ax2.plot(ages, n_crits, 'o-', color='#ff4444',
+         linewidth=2.5, markersize=8, label='Critical')
+ax2.plot(ages, n_risks, 's-', color='#ffdd00',
+         linewidth=2.5, markersize=8, label='At-Risk')
+ax2.plot(ages, n_safes, '^-', color='#44ff88',
+         linewidth=2.5, markersize=8, label='Safe')
+
+# System warning line (20% of 29 = ~6 members)
+ax2.axhline(y=6, color='#ffdd00', linestyle=':',
+            alpha=0.7, label='20% threshold → System Warning')
+ax2.axhline(y=12, color='#ff4444', linestyle=':',
+            alpha=0.7, label='40% threshold → System Critical')
+
+ax2.set_xlabel('Bridge Age (Years)', color='white', fontsize=12)
+ax2.set_ylabel('Number of Members', color='white', fontsize=12)
+ax2.set_title(
+    'Member-Level Condition Evolution Over Time',
+    color='white', fontsize=12
+)
+ax2.legend(facecolor='#2d2d44', labelcolor='white', fontsize=10)
+ax2.tick_params(colors='white')
+ax2.set_ylim(0, N_TOTAL + 2)
+ax2.set_xticks(ages)
+ax2.grid(axis='y', color='#333355', linestyle='--', alpha=0.5)
+for spine in ax2.spines.values():
+    spine.set_edgecolor('#333355')
 
 plt.tight_layout()
-plt.savefig('outputs/casestudy_trend.png', dpi=150,
-            bbox_inches='tight',
-            facecolor=fig.get_facecolor())
+plt.savefig('outputs/casestudy_reliability.png', dpi=150,
+            bbox_inches='tight', facecolor=fig.get_facecolor())
 plt.close()
-print("  ✅ Saved → outputs/casestudy_trend.png")
+print("  ✅ outputs/casestudy_reliability.png")
 
 # ── FINAL SUMMARY ──
-print(f"\n{'='*55}")
-print(f"  CASE STUDY SUMMARY")
-print(f"{'='*55}")
-for age, dead, live, label, preds, _, _, E_eff, n_crit in stage_results:
-    status = '🟢 Safe' if n_crit==0 else \
-             ('🟡 Warning' if n_crit<10 else '🔴 DANGER')
-    print(f"  Year {age:>2} : {n_crit:>2} Critical members → {status}")
+print(f"\n{'='*60}")
+print(f"  LIFE-CYCLE SUMMARY")
+print(f"{'='*60}")
+for s in stage_results:
+    if s['n_crit'] / N_TOTAL > 0.40:
+        status = '🔴 SYSTEM CRITICAL'
+    elif s['n_crit'] / N_TOTAL > 0.20:
+        status = '🟡 SYSTEM WARNING'
+    else:
+        status = '🟢 SYSTEM SAFE'
+    print(f"  {s['label']:<35} "
+          f"R={s['R']:.2f}  {status}")
 
-print(f"\n  ✅ Our SHM system flags danger from Year 30 onwards")
-print(f"  ✅ Would have given ~20 years early warning")
-print(f"  ✅ Fern Hollow collapse was preventable")
-print(f"\n🎉 Case study complete!")
-print(f"   Files saved in outputs/")
+print(f"\n  Key Findings:")
+print(f"  → ML framework identifies at-risk members early")
+print(f"  → Reliability Index R(t) declines monotonically with age")
+print(f"  → System-level warning triggered when R(t) < 0.80")
+print(f"  → Demonstrates value of SHM for life-cycle management")
+print(f"\n🎉 Member-level case study complete!")
+print(f"   Next phase: System-level failure probability")
