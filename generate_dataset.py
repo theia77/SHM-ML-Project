@@ -116,7 +116,7 @@ for A in areas:
                     'YieldStrength_MPa': Fy,
                     'DeadLoad_kN':       dead,
                     'LiveLoad_kN':       live,
-                    'AxialForce_kN':     round(force,3),
+                    'AxialForce_kN':     round(force/1000,3),
                     'Stress_MPa':        round(stress_mpa,3),
                     'StressRatio':       round(stress_ratio,4),
                     'Condition':         condition
