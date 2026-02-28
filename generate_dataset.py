@@ -27,7 +27,7 @@ member_types = {
     **{i:'Diagonal'     for i in range(24,32)}
 }
 
-def solve_truss(dead_kN, live_kN, A_m2, E=200e6):
+def solve_truss(dead_kN, live_kN, A_m2, E=200e9):
     n_dof = len(nodes) * 2
     K = np.zeros((n_dof, n_dof))
 
@@ -49,8 +49,8 @@ def solve_truss(dead_kN, live_kN, A_m2, E=200e6):
                 K[dofs[r], dofs[col]] += ke[r, col]
 
     F = np.zeros(n_dof)
-    total = dead_kN + live_kN
-    for node in range(2, 9):
+    total = (dead_kN + live_kN)*1000
+    for node in [10,11,12,13,14,15,16]:
         F[2*(node-1)+1] -= total
 
     fixed = [0, 1, 17]
@@ -94,7 +94,7 @@ for A in areas:
             forces = solve_truss(dead, live, A)
             for mem_id, ni, nj in member_list:
                 force        = forces[mem_id]
-                stress_mpa   = (force/A)/1000
+                stress_mpa   = (force/A)/1e6
                 stress_ratio = abs(stress_mpa)/Fy
                 xi,yi = nodes[ni]
                 xj,yj = nodes[nj]
