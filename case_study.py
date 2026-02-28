@@ -124,7 +124,7 @@ def simulate_year(age_years, dead_kN, live_kN,
         cf = float(np.clip(1.0 - base_loss + variation, 0.60, 1.0))
         cf_map[mem_id] = cf
 
-       rows.append({
+        rows.append({
             'MemberID':           mem_id,
             'MemberType_enc':     le.transform([mtype])[0],
             'Length_m':           round(length, 3),
