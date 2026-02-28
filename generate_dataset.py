@@ -141,8 +141,3 @@ print(f"   Columns: {list(df.columns)}")
 print(f"\nCondition distribution:")
 print(df['Condition'].value_counts())
 print(f"\nSaved to: data/bridge_database.csv")
-```
-
-**Step 4:** Commit message:
-```
-Added dataset generator - multiple load cases, materials, sections
