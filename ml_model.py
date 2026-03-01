@@ -232,11 +232,3 @@ print(f"""
    → IS 800:2007   FOS 1.67/1.25 condition thresholds
    → No data leakage (stress/force/ratio removed)
 """)
-```
-
----
-
-## Commit Messages:
-```
-generate_dataset: removed E_effective_GPa column (IS 2062 constant)
-ml_model: final IS code aligned - removed E feature, clean pipeline
