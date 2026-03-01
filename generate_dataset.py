@@ -90,9 +90,11 @@ def solve_truss(dead_N, live_N, areas_dict):
 
     # Loads on top chord nodes 10-16 (IRC 6:2017)
     F = np.zeros(n_dof)
+    # IRC 6:2017 — total load divided equally
+    # across 7 panel points (nodes 10-16)
+    panel_load = (dead_N + live_N) / 7
     for node in [10,11,12,13,14,15,16]:
-        F[2*(node-1)+1] -= (dead_N + live_N)
-
+        F[2*(node-1)+1] -= panel_load
     # Node 1=Pin | Node 9=Roller (IRC 24:2010)
     fixed = [0, 1, 17]
     free  = [i for i in range(n_dof) if i not in fixed]
