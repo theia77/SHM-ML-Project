@@ -33,7 +33,7 @@ nodes = {
 
 # ── MEMBER LIST ──
 # Format: (MemberID, NodeI, NodeJ)
-# Pratt truss: diagonals slope toward center — tension under gravity
+# Pratt truss: diagonals slope toward centre — tension under gravity
 
 member_list = [
     # Bottom chord (8) — tension members under gravity load
@@ -41,7 +41,6 @@ member_list = [
     (5,5,6),(6,6,7),(7,7,8),(8,8,9),
 
     # Top chord (6) — compression members under gravity load
-    # Connects top nodes only (10→16)
     (9,10,11),(10,11,12),(11,12,13),
     (12,13,14),(13,14,15),(14,15,16),
 
@@ -68,17 +67,28 @@ member_types = {
 }
 
 # ── MATERIAL PROPERTIES (IS 2062:2011) ──
-E  = 200e9    # N/m² = 200 GPa — Young's Modulus (Cl. 2.2.1)
-              # CONSTANT — does not change with age or corrosion
-A  = 1903e-6  # m²   — ISA 100×100×10 (IS 808:1989, Table 1)
-Fy = 250e6    # N/m² — Yield strength, Grade E250 (IS 2062 Table 1)
-Fu = 410e6    # N/m² — Ultimate strength, Grade E250
-density = 7850 # kg/m³ — Steel density
+E       = 200e9   # N/m² = 200 GPa — Young's Modulus (Cl. 2.2.1)
+                  # CONSTANT — does not change with age or corrosion
+A       = 1903e-6 # m²   — ISA 100×100×10 (IS 808:1989, Table 1)
+Fy      = 250e6   # N/m² — Yield strength, Grade E250 (IS 2062 Table 1)
+Fu      = 410e6   # N/m² — Ultimate strength, Grade E250
+density = 7850    # kg/m³ — Steel density (IS 2062)
 
-# ── SUPPORT CONDITIONS ──
+# ── SUPPORT CONDITIONS (IRC 24:2010) ──
 # Node 1 → Pin   (restrain X and Y translation)
 # Node 9 → Roller (restrain Y translation only)
-# Simply supported — standard for road bridges (IRC 24:2010)
+# Simply supported — standard for road bridges
+
+# ── LOADING (IRC 6:2017) ──
+# Total loads per truss (not per node):
+# Dead load total : 200–400 kN  (deck + wearing coat + steel self weight)
+# Live load total : 0–300 kN    (IRC Class A per lane)
+# Applied as      : panel_load = (dead_total + live_total) / 7
+#                   Equally distributed to top chord nodes 10–16
+# ISA 100×100×10 stress check:
+#   Total < 320 kN  → Stress ratio < 0.60 → Safe
+#   Total 320–430 kN→ Stress ratio 0.60–0.80 → At-Risk
+#   Total > 430 kN  → Stress ratio > 0.80 → Critical
 
 # ── DETERMINACY CHECK ──
 j = len(nodes)          # 16 joints
@@ -86,30 +96,27 @@ m = len(member_list)    # 29 members
 r = 3                   # reactions (pin=2, roller=1)
 
 print(f"✅ Truss Model — IS Code Summary")
-print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print(f"  Nodes        : {j}")
 print(f"  Members      : {m}")
 print(f"  Reactions    : {r}")
 print(f"  2j - 3       : {2*j-3}")
 print(f"  Determinacy  : "
       f"{'✅ Statically Determinate' if m==2*j-3 else f'⚠️ Indeterminate by {m-(2*j-3)}'}")
-print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print(f"  Span         : 24m (8 panels × 3m)")
 print(f"  Height       : 4m (depth/span = 1/6)")
 print(f"  Bridge type  : Simply Supported Pratt Truss")
 print(f"  Support      : Pin (Node 1) + Roller (Node 9)")
-print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print(f"  IS 2062:2011 : Grade E250")
 print(f"  E            : 200 GPa (constant)")
 print(f"  Fy           : 250 MPa")
 print(f"  Fu           : 410 MPa")
 print(f"  Section      : ISA 100×100×10 (IS 808)")
 print(f"  Area         : 1903 mm²")
-print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print(f"  IRC 6:2017   : Dead=100 kN, Live=75 kN per panel")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"  IRC 6:2017   : Total Dead=200-400kN | Live=0-300kN per truss")
+print(f"               : panel_load = (dead+live) / 7 nodes")
 print(f"  IS 800:2007  : FOS basis for condition labeling")
 print(f"  IS 9077:1979 : C3 Urban corrosion environment")
-# IRC 6:2017 — TOTAL loads per truss (kN)
-# Dead: 200-400 kN | Live: 0-300 kN
-# panel_load = (dead + live) / 7 nodes
-
