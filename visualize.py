@@ -204,7 +204,7 @@ print("Generating IS code compliant heatmaps...\n")
 
 # Scenario 1 — New bridge, dead load only
 predict_and_plot(
-    dead_kN=80, live_kN=0,
+    dead_kN=200, live_kN=0,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=1.0,
     title='Scenario 1 — New Bridge | Dead Load Only (IRC 6:2017)',
@@ -213,7 +213,7 @@ predict_and_plot(
 
 # Scenario 2 — New bridge, full IRC Class A service
 predict_and_plot(
-    dead_kN=100, live_kN=75,
+    dead_kN=280, live_kN=175,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=1.0,
     title='Scenario 2 — New Bridge | Full IRC Class A Service Load',
@@ -222,7 +222,7 @@ predict_and_plot(
 
 # Scenario 3 — 20% corroded, IS 9077 C3 (50yr top chord)
 predict_and_plot(
-    dead_kN=100, live_kN=75,
+    dead_kN=280, live_kN=175,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=0.80,
     title='Scenario 3 — IS 9077 C3: 20% Corroded | Full Service Load',
@@ -231,7 +231,7 @@ predict_and_plot(
 
 # Scenario 4 — Severe degradation, per-member corrosion, overload
 predict_and_plot(
-    dead_kN=150, live_kN=150,
+    dead_kN=350, live_kN=245,
     A_base_mm2=1200, Fy=250,
     corrosion_factor=0.70,
     title='Scenario 4 — IS 9077 C3: 30% Corroded | IRC Overload Condition',
