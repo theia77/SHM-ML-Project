@@ -129,14 +129,14 @@ yield_strengths = [250, 345, 410]  # MPa
 
 # IRC 6:2017 — load combinations
 load_cases = [
-    (80,   0,   'LC_DeadOnly_Light'),
-    (100,  0,   'LC_DeadOnly_Full'),
-    (100,  50,  'LC_ServiceLight'),
-    (100,  75,  'LC_ServiceFull'),      # IRC Class A
-    (100,  112, 'LC_Overload'),         # 1.5×Live
-    (120,  75,  'LC_HeavyDead'),
-    (120,  112, 'LC_Extreme'),
-    (150,  150, 'LC_Critical'),
+    (200, 0,   'LC_DeadOnly_Light'),
+    (280, 0,   'LC_DeadOnly_Full'),
+    (280, 100, 'LC_ServiceLight'),
+    (280, 175, 'LC_ServiceFull'),
+    (280, 245, 'LC_Overload'),
+    (320, 175, 'LC_HeavyDead'),
+    (320, 245, 'LC_Extreme'),
+    (400, 300, 'LC_Critical'),
 ]
 
 N_DEGRADATION = 3  # variants per combination
