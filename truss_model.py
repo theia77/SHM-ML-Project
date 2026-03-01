@@ -109,3 +109,7 @@ print(f"━━━━━━━━━━━━━━━━━━━━━━━━
 print(f"  IRC 6:2017   : Dead=100 kN, Live=75 kN per panel")
 print(f"  IS 800:2007  : FOS basis for condition labeling")
 print(f"  IS 9077:1979 : C3 Urban corrosion environment")
+# IRC 6:2017 — TOTAL loads per truss (kN)
+# Dead: 200-400 kN | Live: 0-300 kN
+# panel_load = (dead + live) / 7 nodes
+
