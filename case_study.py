@@ -152,11 +152,11 @@ def simulate_year(age_years, dead_kN, live_kN):
 
 # ── 5 TIME STAGES (IRC 6:2017 gradual load increase) ──
 stages = [
-    (0,   80,  0,   'Year 0  — New Bridge'),
-    (10,  85,  20,  'Year 10 — Early Service'),
-    (20,  90,  40,  'Year 20 — Aging Begins'),
-    (35,  100, 60,  'Year 35 — Significant Deterioration'),
-    (50,  120, 112, 'Year 50 — Critical Condition'),
+    (0,   200, 0,   'Year 0  — New Bridge'),
+    (10,  250, 75,  'Year 10 — Early Service'),
+    (20,  280, 150, 'Year 20 — Aging Begins'),
+    (35,  320, 200, 'Year 35 — Significant Deterioration'),
+    (50,  350, 245, 'Year 50 — Critical Condition'),
 ]
 
 print("\n── IS 800:2007 FOS Based Predictions ──\n")
