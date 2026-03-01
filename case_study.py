@@ -384,12 +384,3 @@ print(f"""
 🎉 IS Code compliant case study complete!
    Next phase: System-level failure probability
 """)
-```
-
----
-
-## Commit Messages:
-```
-truss_model: added IS code references and documentation
-visualize: removed E parameter, IS code aligned, clean Pratt scenarios
-case_study: removed E degradation, IS 9077 rates, IS 800 FOS, chemistry comments
