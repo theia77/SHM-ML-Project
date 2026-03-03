@@ -9,30 +9,32 @@ import os
 
 # ══════════════════════════════════════════════════════
 # IS Code References:
-# IS 2062:2011  — E = 200 GPa constant (not a feature)
-# IS 9077:1979  — Corrosion factor (C3 Urban)
-# IRC 6:2017    — Load scenarios
-# IS 800:2007   — FOS based condition labels
+# IS 2062:2011  — E=200GPa constant
+# IS 9077:1979  — C2/C3/C4/C5 corrosion environments
+# IRC 6:2017    — Load scenarios per use case
+# IS 800:2007   — FOS condition labels
 # ══════════════════════════════════════════════════════
 
-# ── LOAD MODEL ──
-with open('models/bridge_rf_model.pkl', 'rb') as f:
+# ── LOAD MODEL + ENCODERS ──
+with open('models/bridge_rf_model.pkl','rb') as f:
     model = pickle.load(f)
-with open('models/label_encoder.pkl', 'rb') as f:
-    le = pickle.load(f)
+with open('models/label_encoder.pkl','rb') as f:
+    le_member = pickle.load(f)
+with open('models/le_use.pkl','rb') as f:
+    le_use = pickle.load(f)
+with open('models/le_env.pkl','rb') as f:
+    le_env = pickle.load(f)
+with open('models/le_maint.pkl','rb') as f:
+    le_maint = pickle.load(f)
 
-# Must match ml_model.py training features exactly
-# E_effective_GPa removed — IS 2062 constant, zero variance
+# Must match ml_model.py exactly
 ML_FEATURES = [
-    'MemberID',
-    'MemberType_enc',
-    'Length_m',
-    'Area_original_mm2',
-    'Area_effective_mm2',
-    'CorrosionFactor',
-    'YieldStrength_MPa',
-    'DeadLoad_kN',
-    'LiveLoad_kN',
+    'MemberID', 'MemberType_enc', 'Length_m',
+    'Area_original_mm2', 'Area_effective_mm2',
+    'CorrosionFactor', 'YieldStrength_MPa',
+    'DeadLoad_kN', 'LiveLoad_kN',
+    'AgeYears', 'UseCase_enc',
+    'Environment_enc', 'Maintenance_enc',
 ]
 
 # ── GEOMETRY ──
@@ -67,22 +69,22 @@ os.makedirs('outputs', exist_ok=True)
 
 # ── VISUALIZATION FUNCTION ──
 def predict_and_plot(dead_kN, live_kN, A_base_mm2, Fy,
-                     corrosion_factor,
+                     corrosion_factor, age_years,
+                     use_case, environment, maintenance,
                      title, filename,
                      per_member_corrosion=False):
     """
     Predict member conditions and plot heatmap.
-    IS 9077: corrosion_factor = area retention ratio
-    IS 2062: E = 200 GPa constant (not passed as parameter)
+    Requires all 13 ML features including context.
     """
     rows = []
     corrosion_map = {}
 
     for mem_id, ni, nj in member_list:
-        xi,yi = nodes[ni]; xj,yj = nodes[nj]
-        length = np.sqrt((xj-xi)**2 + (yj-yi)**2)
+        xi,yi=nodes[ni]; xj,yj=nodes[nj]
+        length = np.sqrt((xj-xi)**2+(yj-yi)**2)
 
-        # IS 9077: per-member or uniform corrosion
+        # Per-member or uniform corrosion
         if per_member_corrosion:
             cf = np.random.uniform(corrosion_factor, 1.0)
         else:
@@ -91,18 +93,24 @@ def predict_and_plot(dead_kN, live_kN, A_base_mm2, Fy,
 
         rows.append({
             'MemberID':           mem_id,
-            'MemberType_enc':     le.transform([member_types[mem_id]])[0],
+            'MemberType_enc':     le_member.transform(
+                                  [member_types[mem_id]])[0],
             'Length_m':           round(length, 3),
             'Area_original_mm2':  A_base_mm2,
             'Area_effective_mm2': round(A_base_mm2 * cf, 3),
             'CorrosionFactor':    round(cf, 4),
-            # E_effective_GPa removed — IS 2062 constant
             'YieldStrength_MPa':  Fy,
             'DeadLoad_kN':        dead_kN,
             'LiveLoad_kN':        live_kN,
+            'AgeYears':           age_years,
+            'UseCase_enc':        le_use.transform(
+                                  [use_case])[0],
+            'Environment_enc':    le_env.transform(
+                                  [environment])[0],
+            'Maintenance_enc':    le_maint.transform(
+                                  [maintenance])[0],
         })
 
-    # Enforce exact feature order from training
     X_new      = pd.DataFrame(rows)[ML_FEATURES]
     preds      = model.predict(X_new)
     probas     = model.predict_proba(X_new)
@@ -117,15 +125,14 @@ def predict_and_plot(dead_kN, live_kN, A_base_mm2, Fy,
     cmap = plt.cm.RdYlGn_r
     norm = Normalize(vmin=0, vmax=1)
 
-    for idx, (mem_id, ni, nj) in enumerate(member_list):
-        x1,y1 = nodes[ni]; x2,y2 = nodes[nj]
+    for idx,(mem_id,ni,nj) in enumerate(member_list):
+        x1,y1=nodes[ni]; x2,y2=nodes[nj]
         prob  = crit_probs[idx]
         color = cmap(norm(prob))
         lw    = 4.5 if member_types[mem_id] in \
                 ['Bottom Chord','Top Chord','End Post'] else 2.5
         ax.plot([x1,x2],[y1,y2], color=color,
                 linewidth=lw, solid_capstyle='round')
-
         mx,my = (x1+x2)/2,(y1+y2)/2
         ax.text(mx, my+0.18, f'M{mem_id}',
                 fontsize=6.5, color='white',
@@ -173,12 +180,13 @@ def predict_and_plot(dead_kN, live_kN, A_base_mm2, Fy,
 
     ax.set_title(
         f'{title}\n'
-        f'IRC 6: Dead={dead_kN}kN Live={live_kN}kN  |  '
-        f'IS 9077 C3 Corrosion: {corr_pct}%  |  '
-        f'IS 2062 E=200GPa (const)\n'
-        f'IS 800 FOS: Safe={n_safe}  At-Risk={n_risk}  '
+        f'Age={age_years}yr | {use_case} | '
+        f'{environment} | Maint={maintenance}\n'
+        f'IRC6: Dead={dead_kN}kN Live={live_kN}kN | '
+        f'IS9077: {corr_pct}% corrosion | '
+        f'IS800 FOS: Safe={n_safe} At-Risk={n_risk} '
         f'Critical={n_crit}',
-        color='white', fontsize=11, pad=15
+        color='white', fontsize=10, pad=15
     )
 
     ax.set_xlim(-2, 27); ax.set_ylim(-1.5, 6.5)
@@ -186,57 +194,77 @@ def predict_and_plot(dead_kN, live_kN, A_base_mm2, Fy,
     ax.set_xlabel('Span (m)', color='white', fontsize=10)
     ax.set_ylabel('Height (m)', color='white', fontsize=10)
     ax.tick_params(colors='white')
-    for spine in ax.spines.values():
-        spine.set_edgecolor('#333355')
+    for sp in ax.spines.values():
+        sp.set_edgecolor('#333355')
 
     plt.tight_layout()
     path = f'outputs/{filename}'
     plt.savefig(path, dpi=150, bbox_inches='tight',
                 facecolor=fig.get_facecolor())
     plt.close()
+    print(f"  ✅ {path}")
+    print(f"     Safe:{n_safe} At-Risk:{n_risk} "
+          f"Critical:{n_crit}\n")
 
-    print(f"✅ {path}")
-    print(f"   Safe:{n_safe} At-Risk:{n_risk} Critical:{n_crit}\n")
-
-# ── RUN 4 IS CODE SCENARIOS ──
+# ── 4 IS CODE SCENARIOS ──
 np.random.seed(42)
 print("Generating IS code compliant heatmaps...\n")
 
-# Scenario 1 — New bridge, dead load only
+# Scenario 1 — Year 0, Rural, C2, Good maintenance
 predict_and_plot(
-    dead_kN=200, live_kN=0,
+    dead_kN=220, live_kN=0,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=1.0,
-    title='Scenario 1 — New Bridge | Dead Load Only (IRC 6:2017)',
+    age_years=0,
+    use_case='Rural',
+    environment='C2_Rural',
+    maintenance='Good',
+    title='Scenario 1 — New Bridge | Rural | '
+          'Dead Load Only (IRC 6:2017)',
     filename='heatmap_S1_new_light.png'
 )
 
-# Scenario 2 — New bridge, full IRC Class A service
+# Scenario 2 — Year 0, Urban, C3, Full service
 predict_and_plot(
     dead_kN=280, live_kN=175,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=1.0,
-    title='Scenario 2 — New Bridge | Full IRC Class A Service Load',
+    age_years=0,
+    use_case='Urban',
+    environment='C3_Urban',
+    maintenance='Good',
+    title='Scenario 2 — New Bridge | Urban | '
+          'Full IRC Class A Service (IRC 6:2017)',
     filename='heatmap_S2_new_full.png'
 )
 
-# Scenario 3 — 20% corroded, IS 9077 C3 (50yr top chord)
+# Scenario 3 — Year 25, Urban, C3, Partial maint
 predict_and_plot(
     dead_kN=280, live_kN=175,
     A_base_mm2=1903, Fy=250,
     corrosion_factor=0.80,
-    title='Scenario 3 — IS 9077 C3: 20% Corroded | Full Service Load',
+    age_years=25,
+    use_case='Urban',
+    environment='C3_Urban',
+    maintenance='Partial',
+    title='Scenario 3 — Year 25 | Urban | '
+          'IS 9077 C3: 20% Corroded | Full Service',
     filename='heatmap_S3_corroded_full.png'
 )
 
-# Scenario 4 — Severe degradation, per-member corrosion, overload
+# Scenario 4 — Year 40, Highway, C4, No maint
 predict_and_plot(
     dead_kN=350, live_kN=245,
     A_base_mm2=1200, Fy=250,
     corrosion_factor=0.70,
-    title='Scenario 4 — IS 9077 C3: 30% Corroded | IRC Overload Condition',
+    age_years=40,
+    use_case='Highway',
+    environment='C4_Industrial',
+    maintenance='None',
+    title='Scenario 4 — Year 40 | Highway | '
+          'IS 9077 C4: 30% Corroded | IRC Overload',
     filename='heatmap_S4_degraded_critical.png',
     per_member_corrosion=True
 )
 
-print("🎉 All heatmaps complete — IS code compliant!")
+print("All heatmaps complete — IS code compliant!")
